@@ -1,57 +1,43 @@
-# Dexterous Hand Sim-to-Real Controller
+# Dexterous Hand Sim-to-Real Control Project
 (English | [中文版](#-中文介绍))
 
-A C++ based Sim-to-Real motion control framework for dexterous hands (tested on 16-DOF Allegro Hand and 6-DOF Inspire-Robots RH56F1). The project implements kinematics, impedance control, and hardware communication from scratch without relying on external IK solvers.
+This is a robotics practice project where I implemented motion controllers for both a simulated 16-DOF Allegro Hand and a physical 6-DOF Inspire-Robots RH56F1 hand. The project uses ROS 2 and C++ without relying on external IK libraries.
 
 > **Demo Video:** [Link to your Sim-to-Real Pinching Video](https://b23.tv/PvVZ5lQ)
 
-## Core Features
-- **Native Kinematics Implementation**: Explicit SE(3) homogeneous transformation chain and geometric Jacobian derivation `(T.linear() * axis).cross(P_tip - P)`.
-- **Singularity Handling**: Applied Damped Least Squares (DLS) pseudo-inverse $J^T(JJ^T + \lambda^2 I)^{-1}$ to ensure numerical stability near workspace boundaries.
-- **Impedance Control & Integrator**: Integrated a virtual spring model with a command integrator (`cmd += q_dot * dt`) to mitigate static friction and steady-state errors on real hardware.
-- **Hardware Communication Bridge**: Implemented a byte-stream sliding window parser for half-duplex RS485 communication, using `std::mutex` to resolve data race conditions between ROS 2 async callbacks and the control loop.
+## Implementation Details
+- **Kinematics & Jacobian**: Derived the SE(3) forward kinematics and geometric Jacobian manually using `Eigen`. Handled the specific mechanical linkage ratios (e.g., 0.8962, 1.1545) of the physical RH56F1 hand.
+- **Control Strategy**: 
+  - Used Damped Least Squares (DLS) pseudo-inverse to handle kinematic singularities.
+  - Formulated a relative Jacobian (`J_rel << J_index, -J_thumb`) to control the relative distance between two fingers.
+  - Added a command integrator (`target_q += q_dot * dt`) to overcome static friction on the real hardware.
+- **Pre-Grasp Logic**: Added a simple two-phase state machine to move the thumb out of the way before closing the fingers, avoiding self-collision.
+- **Serial Communication**: Wrote a basic RS485 serial reader using a sliding window to find data frame headers (`0x90 0xEB`), and used `std::mutex` to prevent data races between ROS 2 callbacks and the control loop.
 
-## Node Architecture
-The system is decoupled into two primary ROS 2 nodes (Producer-Consumer pattern):
+## Code Structure
+The workspace consists of three main C++ nodes:
 
-### 1. Controller Node: `thumb_index_catch`
-- Runs on a strict 50Hz (20ms) Timer Callback.
-- Computes Forward Kinematics (FK) and analytical Jacobian.
-- Generates a collision-free pre-grasp trajectory using Smooth-Step (Cosine) interpolation.
-- Calculates the DLS pseudo-inverse and outputs the integrated joint commands.
-
-### 2. Hardware Bridge Node: `inspire_bridge_node`
-- Manages RS485 serial communication with the Inspire-Robots RH56F1.
-- Uses a sliding window state machine to capture headers (`0x90 0xEB`), reducing frame parsing errors under non-real-time Linux environments.
-- Utilizes `std::mutex` to decouple the asynchronous ROS 2 subscription from the hardware control loop.
+- `thumb_index_catch.cpp`: **Simulation Controller**. Controls the 16-DOF Allegro Hand in Ignition Gazebo, calculating 3D kinematics and DLS inverse kinematics at 50Hz.
+- `inspire_commander.cpp`: **Real-Hand Controller**. Controls the 6-DOF Inspire RH56F1 physical hand, handling the mechanical coupling and integral control to overcome real-world friction.
+- `inspire_bridge_node.cpp`: **Hardware Driver**. Handles the actual RS485 byte-stream parsing and publishes ROS 2 topics.
 
 ---
 
-## 中文介绍
+## 🇨🇳 中文介绍
 
-本项目是一个面向灵巧手（Allegro Hand & 因时 RH56F1）的 Sim-to-Real 运动控制代码库。核心运动学算法与底层通信驱动均由 C++ 编写，未调用外部 IK 求解器库。
+这是我在学习机器人控制算法时完成的一个实践项目。项目基于 ROS 2 和 C++，为 16 自由度的 Allegro Hand (仿真) 和 6 自由度的因时 RH56F1 (真机) 编写了从头推导的运动学闭环控制程序。
 
-> **实机演示视频：** [点击观看：灵巧手 Sim-to-Real 闭环对捏实测](https://b23.tv/PvVZ5lQ)
+> **实机演示视频：** [点击观看：灵巧手闭环对捏实测](https://b23.tv/PvVZ5lQ)
 
-### 核心技术实现
-- **正运动学与雅可比**：基于 SE(3) 齐次变换矩阵推导连杆正运动学，并使用一阶向量叉乘计算全局解析几何雅可比矩阵 `(T.linear() * axis).cross(P_tip - P)`。
-- **奇异点处理**：引入阻尼最小二乘法（DLS），计算矩阵伪逆 $J^T(JJ^T + \lambda^2 I)^{-1}$，保证算法在工作空间边界时的数值稳定性。
-- **控制策略设计**：采用虚拟弹簧阻抗控制模型，结合纯指令积分器 (`cmd += q_dot * dt`) 减小真机静摩擦带来的稳态误差；引入余弦平滑插值（Smooth-Step）规划防干涉轨迹。
-- **底层通信处理**：针对因时灵巧手的 RS485 半双工串口，编写了基于字节流滑动窗口的解析算法以应对粘包错位；并使用 `std::mutex` 解决 ROS 2 异步回调与定时器控制循环之间的数据竞态问题。
+### 主要工作内容
+- **纯手写运动学**：使用 Eigen 库推导了 SE(3) 齐次矩阵和几何雅可比。针对因时实机，在代码中计算了内部连杆的耦合传动比（1.1545 / 0.8962）。
+- **相对雅可比与防奇异点**：将双指的雅可比拼接为相对雅可比矩阵 (`J_rel << J_index, -J_thumb`) 来控制指尖距离误差，并加入了 DLS（阻尼最小二乘法）伪逆来处理奇异点。
+- **抗摩擦与防碰撞设计**：
+  - 为克服真实物理电缸的静摩擦，在控制率中加入了指令积分累加机制。
+  - 写了一个简单的阶段状态机，在抓取前先让大拇指外旋避障，避免了真机两指发生碰撞干涉。
+- **底层串口通信**：针对 RS485 通信，写了一个带滑动窗口的字节流解析函数来过滤错位数据，并用 `std::mutex` 解决了 ROS 2 异步回调和定时器之间的数据冲突。
 
-### 节点架构
-系统采用“算法控制”与“底层通信”解耦的设计：
-
-#### 1. 控制器节点：`thumb_index_catch`
-- 运行于 50Hz (20ms) 的定时器线程。
-- 负责运动学推导、雅可比计算以及 DLS 正则化求逆。
-- 输出积分限幅后的期望关节角至 ROS 2 话题。
-
-#### 2. 底层驱动桥：`inspire_bridge_node`
-- 负责非实时 Linux 系统下微电缸串口的稳定收发。
-- 动态寻址帧头，过滤硬件抖动导致的错位断帧。
-- 内置物理电缸行程到关节弧度 (Rad) 的线性映射与硬限位保护。
-
-### 编译运行
-- **环境**: Ubuntu 22.04 / ROS 2 (Humble) / C++ 17 / Eigen 3
-- **编译**: `colcon build --packages-select allegro_commander`
+### 节点说明
+- `thumb_index_catch.cpp` (仿真算法节点)：负责 16 轴 Allegro Hand 的运动学推导与 50Hz 闭环控制。
+- `inspire_commander.cpp` (实机算法节点)：负责 6 轴因时实机的运动学映射与积分器控制。
+- `inspire_bridge_node.cpp` (硬件通信节点)：负责 Linux 环境下 RS485 串口数据的解析和收发。
