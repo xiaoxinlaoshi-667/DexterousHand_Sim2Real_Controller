@@ -39,7 +39,7 @@ public:
         actual_angles = Eigen::Vector3d::Zero();
         current_target_q = Eigen::Vector3d::Zero();
 
-        RCLCPP_INFO(this->get_logger(), "🚀 Inspire RH56F1 Sim-to-Real Commander is ready!");
+        RCLCPP_INFO(this->get_logger(), " Inspire RH56F1 Sim-to-Real Commander is ready!");
     }
 
 private:
@@ -159,7 +159,7 @@ private:
         double K_P = 1.0;
         double lamda_squ = 0.01;
         
-        // 【核心创新】：构建双指相对雅可比 (Relative Jacobian) 实现统一笛卡尔控制
+        // 构建双指相对雅可比 (Relative Jacobian) 实现统一笛卡尔控制
         Eigen::Matrix<double,3,3> J_rel;
         J_rel << J_index, -J_thumb;
         
@@ -178,7 +178,7 @@ private:
         double max_step = 0.01;
         step = step.cwiseMax(-max_step).cwiseMin(max_step);
 
-        // 【工业级 Pre-Grasp 时序状态机】避开手指自干涉 (Self-Collision)
+        //  Pre-Grasp 时序状态机 避开手指自干涉 
         if (current_target_q.y() < 1.2) {
             step.x() = 0.0;  // 食指强制静止
             step.z() = 0.0;  // 大拇指弯曲强制静止
@@ -187,10 +187,10 @@ private:
             step.y() = 0.005; 
             
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 500, 
-                "[Phase 1] 预抓取: 强行外旋大拇指中... 当前 Swivel_y = %.2f / 1.20", current_target_q.y());
+                "[Phase 1]  强行外旋大拇指中... 当前 Swivel_y = %.2f / 1.20", current_target_q.y());
         } else {
             RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
-                "[Phase 2] 精准对捏: 相对雅可比闭环接管，指尖收敛中...");
+                "[Phase 2]  相对雅可比闭环接管，指尖收敛中...");
         }
 
         // 纯指令积分累加，克服实机摩擦死区
